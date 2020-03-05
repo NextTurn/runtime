@@ -65,6 +65,8 @@ ThreadInfo::Initialize(ICLRDataTarget* pDataTarget)
     TRACE("Thread %04x PC %08lx SP %08lx\n", m_tid, (unsigned long)m_gpRegisters.ARM_pc, (unsigned long)m_gpRegisters.ARM_sp);
 #elif defined(__x86_64__)
     TRACE("Thread %04x RIP %016llx RSP %016llx\n", m_tid, (unsigned long long)m_gpRegisters.rip, (unsigned long long)m_gpRegisters.rsp);
+#elif defined(__i386__)
+    TRACE("Thread %04x EIP %08lx ESP %08lx\n", m_tid, m_gpRegisters.eip, m_gpRegisters.esp);
 #else
 #error "Unsupported architecture"
 #endif
@@ -253,8 +255,8 @@ ThreadInfo::GetRegistersWithDataTarget(ICLRDataTarget* pDataTarget)
     m_gpRegisters.eflags = context.EFlags;
     m_gpRegisters.ss = context.SegSs;
     m_gpRegisters.rsp = context.Rsp;
-    m_gpRegisters.rdi = context.Rdi;
 
+    m_gpRegisters.rdi = context.Rdi;
     m_gpRegisters.rsi = context.Rsi;
     m_gpRegisters.rbx = context.Rbx;
     m_gpRegisters.rdx = context.Rdx;
@@ -295,6 +297,20 @@ ThreadInfo::GetRegistersWithDataTarget(ICLRDataTarget* pDataTarget)
 
     assert(sizeof(context.FltSave.XmmRegisters) == sizeof(m_fpRegisters.xmm_space));
     memcpy(m_fpRegisters.xmm_space, context.FltSave.XmmRegisters, sizeof(m_fpRegisters.xmm_space));
+#elif defined(__i386__)
+    m_gpRegisters.ebp = context.Ebp;
+    m_gpRegisters.eip = context.Eip;
+    m_gpRegisters.xcs = context.SegCs;
+    m_gpRegisters.eflags = context.EFlags;
+    m_gpRegisters.esp = context.Esp;
+    m_gpRegisters.xss = context.SegSs;
+
+    m_gpRegisters.edi = context.Edi;
+    m_gpRegisters.esi = context.Esi;
+    m_gpRegisters.ebx = context.Ebx;
+    m_gpRegisters.edx = context.Edx;
+    m_gpRegisters.ecx = context.Ecx;
+    m_gpRegisters.eax = context.Eax;
 #elif defined(__aarch64__)
     // See MCREG maps in PAL's context.h
     assert(sizeof(m_gpRegisters.regs) == (sizeof(context.X) + sizeof(context.Fp) + sizeof(context.Lr)));
@@ -352,8 +368,10 @@ ThreadInfo::GetThreadStack(CrashInfo& crashInfo)
     startAddress = MCREG_Sp(m_gpRegisters) & PAGE_MASK;
 #elif defined(__arm__)
     startAddress = m_gpRegisters.ARM_sp & PAGE_MASK;
-#else
+#elif defined(__x86_64__)
     startAddress = m_gpRegisters.rsp & PAGE_MASK;
+#else
+    startAddress = m_gpRegisters.esp & PAGE_MASK;
 #endif
     size = 4 * PAGE_SIZE;
 
@@ -433,6 +451,25 @@ ThreadInfo::GetThreadContext(uint32_t flags, CONTEXT* context) const
         memcpy(context->FltSave.XmmRegisters, m_fpRegisters.xmm_space, sizeof(context->FltSave.XmmRegisters));
     }
     // TODO: debug registers?
+#elif defined(__i386__)
+    if ((flags & CONTEXT_CONTROL) == CONTEXT_CONTROL)
+    {
+        context->Ebp = m_gpRegisters.ebp;
+        context->Eip = m_gpRegisters.eip;
+        context->SegCs = m_gpRegisters.xcs;
+        context->EFlags = m_gpRegisters.eflags;
+        context->Esp = m_gpRegisters.esp;
+        context->SegSs = m_gpRegisters.xss;
+    }
+    if ((flags & CONTEXT_INTEGER) == CONTEXT_INTEGER)
+    {
+        context->Edi = m_gpRegisters.edi;
+        context->Esi = m_gpRegisters.esi;
+        context->Ebx = m_gpRegisters.ebx;
+        context->Edx = m_gpRegisters.edx;
+        context->Ecx = m_gpRegisters.ecx;
+        context->Eax = m_gpRegisters.eax;
+    }
 #elif defined(__aarch64__)
     if ((flags & CONTEXT_CONTROL) == CONTEXT_CONTROL)
     {
